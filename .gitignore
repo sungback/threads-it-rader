@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# 앱 데이터
+*.db
+.threads_it_radar/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
