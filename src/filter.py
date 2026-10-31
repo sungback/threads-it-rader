@@ -14,6 +14,7 @@ from typing import Optional
 CATEGORIES: dict[str, list[str]] = {
     "AI/ML": [
         "AI", "LLM", "GPT", "ChatGPT", "Claude", "Gemini", "Copilot",
+        "클로드", "앤트로픽", "소네트", "오픈AI", "OpenAI", "코덱스", "codex",
         "머신러닝", "딥러닝", "기계학습", "인공지능", "신경망", "랭체인", "RAG",
         "MLOps", "텍스트마이닝", "임베딩", "파인튜닝", "gpu", "cuda",
         "pytorch", "tensorflow", "huggingface", "transformer", "에이전트",

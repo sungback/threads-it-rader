@@ -314,43 +314,64 @@ class ThreadsCollector:
         """화면에 렌더링된 게시물 DOM에서 텍스트/작성자/링크를 추출한다."""
         out: list[RawPost] = []
         try:
-            articles = page.query_selector_all("div[role='article'], article")
+            # 스레드는 <article> 대신 a[href*="/post/"] 링크 기반 카드 레이아웃을 사용
+            post_links = page.query_selector_all("a[href*='/post/']")
         except Exception:
             return out
-        for art in articles:
+
+        seen_codes: set[str] = set()
+        for link_el in post_links:
             try:
-                link_el = art.query_selector("a[href*='/post/']")
-                href = link_el.get_attribute("href") if link_el else None
-                text_el = art.query_selector("div[data-pressable-container=true] span")
-                # 본문: 가장 긴 텍스트 덩어리 수집
-                spans = art.query_selector_all("span")
-                best = ""
-                for s in spans:
-                    t = (s.inner_text() or "").strip()
-                    if len(t) > len(best) and t not in ("•", "·"):
-                        best = t
-                author = ""
-                handle = ""
-                a_els = art.query_selector_all("a[href^='/@']")
-                if a_els:
-                    href0 = a_els[0].get_attribute("href") or ""
-                    handle = href0.split("/@")[-1].split("/")[0]
-                    author = (a_els[0].inner_text() or "").strip().lstrip("@")
-                if not best or len(best) < 20:
-                    continue
-                url = THREADS_BASE + href if href and href.startswith("/") else (href or "")
-                code = ""
-                m = re.search(r"/post/([^/?]+)", url or "")
-                if m:
+                href = link_el.get_attribute("href") or ""
+                m = re.search(r"/@([^/]+)/post/([^/?]+)", href)
+                if not m:
+                    m = re.search(r"/post/([^/?]+)", href)
+                    if not m:
+                        continue
                     code = m.group(1)
+                    handle = ""
                 else:
-                    code = uuid.uuid4().hex[:16]  # 링크 없으면 임시 id
+                    handle = m.group(1)
+                    code = m.group(2)
+
+                if code in seen_codes:
+                    continue
+                seen_codes.add(code)
+
+                # 링크의 부모 컨테이너 중 텍스트가 풍부한 게시물 카드 컨테이너 탐색
+                container = link_el
+                for _ in range(6):
+                    parent = container.query_selector("xpath=..")
+                    if parent is None:
+                        break
+                    container = parent
+                    txt = (container.inner_text() or "").strip()
+                    if len(txt) > 30 and len(txt.split("\n")) >= 2:
+                        break
+
+                full_text = (container.inner_text() or "").strip()
+                # 불필요한 메타 줄(버튼, 시간 등) 제외 후 본문 조합
+                lines = [line.strip() for line in full_text.split("\n") if line.strip()]
+                content_lines = []
+                for line in lines:
+                    if line in (handle, "AI Threads", "AI", "•", "·", "로그인", "답글") or line.isdigit():
+                        continue
+                    content_lines.append(line)
+
+                content = " ".join(content_lines)
+                if not content or len(content) < 10:
+                    content = full_text
+
+                url = f"https://www.threads.net/@{handle}/post/{code}" if handle else (
+                    THREADS_BASE + href if href.startswith("/") else href
+                )
+
                 out.append(
                     RawPost(
                         post_id=code,
-                        author=author,
+                        author=handle or "스레드 사용자",
                         author_handle=handle,
-                        content=best,
+                        content=content,
                         url=url,
                     )
                 )
@@ -367,11 +388,17 @@ class ThreadsCollector:
                 continue
             seen_ids.add(r.post_id)
             text = re.sub(r"\s+", " ", (r.content or "")).strip()
-            if len(text) < 15:  # 노이즈 제거
+            if len(text) < 10:  # 노이즈 제거
                 continue
             cls = classify(text)
+            tag = cls.tag
             if not cls.is_it:
-                continue
+                # 사용자가 직접 입력한 검색어가 본문에 포함되어 있으면 수집 대상으로 인정
+                matched_query = any(q.lower() in text.lower() for q in self.queries)
+                if matched_query:
+                    tag = "AI/ML" if any(w in text.lower() for w in ("클로드", "claude", "gpt", "ai", "llm")) else "Dev"
+                else:
+                    continue
             results.append(
                 CollectedPost(
                     post_id=r.post_id,
@@ -379,7 +406,7 @@ class ThreadsCollector:
                     author_handle=r.author_handle,
                     content=text[:500],
                     url=r.url,
-                    tag=cls.tag,
+                    tag=tag,
                     posted_at=r.posted_at,
                     raw={"text": text},
                 )

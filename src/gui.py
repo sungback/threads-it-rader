@@ -195,8 +195,10 @@ class MainWindow(QMainWindow):
         title_row.addWidget(self.count_label)
         root.addLayout(title_row)
 
+        search_row = QHBoxLayout()
+        search_row.setSpacing(6)
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("🔍 검색어로 피드 필터…")
+        self.search_box.setPlaceholderText("🔍 검색어 입력 후 Enter로 스레드 실시간 수집…")
         self.search_box.setFixedHeight(36)
         self.search_box.setStyleSheet(
             "QLineEdit { background:#fff; border:1px solid #e5e7eb; border-radius:10px;"
@@ -204,7 +206,20 @@ class MainWindow(QMainWindow):
             f"QLineEdit:focus {{ border:1px solid {ACCENT}; }}"
         )
         self.search_box.textChanged.connect(self.reload)
-        root.addWidget(self.search_box)
+        self.search_box.returnPressed.connect(self._on_search_submitted)
+        search_row.addWidget(self.search_box, 1)
+
+        self.search_btn = QPushButton("스레드 수집")
+        self.search_btn.setFixedHeight(36)
+        self.search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.search_btn.setStyleSheet(
+            f"QPushButton {{ background:{ACCENT}; color:white; font-weight:bold; border-radius:10px;"
+            " padding: 0 14px; font-size: 13px; border:none; }"
+            "QPushButton:hover { opacity: 0.9; }"
+        )
+        self.search_btn.clicked.connect(self._on_search_submitted)
+        search_row.addWidget(self.search_btn)
+        root.addLayout(search_row)
 
         # ── 카테고리 필터 버튼 ─────────────────────────────
         cat_row = QHBoxLayout()
@@ -292,12 +307,18 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # 수집 워커
     # ------------------------------------------------------------------
-    def start_collection(self) -> None:
+    def _on_search_submitted(self) -> None:
+        q = self.search_box.text().strip()
+        queries = [q] if q else None
+        self.start_collection(queries=queries)
+
+    def start_collection(self, queries: Optional[list[str]] = None) -> None:
         if self.worker is not None and self.worker.isRunning():
             self.status.setText("이미 수집이 진행 중입니다…")
             return
-        self.status.setText("스레드에서 IT 글 수집 중… (브라우저 헤드리스 기동)")
-        worker = CollectWorker(self.db)
+        q_label = f"'{queries[0]}'" if queries else "기본 IT 키워드"
+        self.status.setText(f"스레드에서 {q_label} 수집 중… (브라우저 기동)")
+        worker = CollectWorker(self.db, queries=queries)
         self.worker = worker
         worker.progress.connect(self.status.setText)
         worker.failed.connect(self._on_collect_failed)
