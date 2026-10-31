@@ -13,14 +13,30 @@ Playwright가 설치되어 있지 않으면 안내 오류를 돌려준다.
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
+import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from .filter import classify
+
+# 앱 번들(frozen) 실행 시 PLAYWRIGHT_BROWSERS_PATH가 비어 있으면
+# Playwright 드라이버가 읽기 전용 번들 내부 .local-browsers를 탐색하게 된다.
+# 시스템별 사용자 캐시 경로를 기본값으로 세팅한다.
+if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    if sys.platform == "darwin":
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.expanduser(
+            "~/Library/Caches/ms-playwright"
+        )
+    elif sys.platform == "win32":
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.expandvars(
+            r"%LOCALAPPDATA%\ms-playwright"
+        )
 
 THREADS_BASE = "https://www.threads.net"
 SEARCH_URL = THREADS_BASE + "/search?q={query}&serp_type=default"
@@ -148,6 +164,61 @@ class ThreadsCollector:
             except Exception:
                 pass
 
+    def _launch_browser(self, pw: Any) -> Any:
+        """가능한 브라우저를 순서대로 시도해 실행한다.
+
+        ① 시스템 Chrome (다운로드 불필요) ② 시스템 Edge ③ 내장 크로미움.
+        내장 크로미움도 바이너리가 없으면 자동 설치 후 재시도한다.
+        """
+        args = ["--disable-blink-features=AutomationControlled"]
+        errors: list[str] = []
+
+        for channel in ("chrome", "msedge"):
+            try:
+                self._status(f"시스템 브라우저 실행 시도: {channel}")
+                return pw.chromium.launch(headless=self.headless, channel=channel, args=args)
+            except Exception as e:
+                errors.append(f"channel={channel}: {e}")
+
+        try:
+            self._status("내장 크로미움 실행 시도")
+            return pw.chromium.launch(headless=self.headless, args=args)
+        except Exception as e:
+            if self._is_missing_browser_error(e):
+                self._status("내장 크로미움이 없어 자동 설치를 시도합니다")
+                self._auto_install_browsers()
+                try:
+                    return pw.chromium.launch(headless=self.headless, args=args)
+                except Exception as e2:
+                    errors.append(f"chromium(auto-installed): {e2}")
+            else:
+                errors.append(f"chromium: {e}")
+
+        raise RuntimeError(
+            "실행 가능한 브라우저를 찾지 못했습니다.\n"
+            "Google Chrome을 설치하거나 터미널에서 다음을 실행하세요:\n"
+            "  playwright install chromium\n\n시도 로그:\n" + "\n".join(errors)
+        )
+
+    @staticmethod
+    def _is_missing_browser_error(e: Exception) -> bool:
+        """브라우저 바이너리 부재 오류인지 판별한다."""
+        text = str(e)
+        return (
+            "Executable doesn't exist" in text
+            or "looks like Playwright was just installed" in text
+            or ".local-browsers" in text
+            or "ms-playwright" in text
+        )
+
+    @staticmethod
+    def _auto_install_browsers() -> None:
+        """Playwright 드라이버를 통해 크로미움을 자동 설치한다."""
+        from playwright._impl._driver import compute_driver_executable, get_driver_env
+
+        driver_exec, driver_env = compute_driver_executable()
+        subprocess.run([driver_exec, "install", "chromium"], env=driver_env, check=True)
+
     def collect(self) -> list[CollectedPost]:
         """전체 검색어에 대해 수집하고, IT 관련 글만 정규화해 반환한다."""
         try:
@@ -160,9 +231,7 @@ class ThreadsCollector:
         captured: list[RawPost] = []
 
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(
-                headless=self.headless, args=["--disable-blink-features=AutomationControlled"]
-            )
+            browser = self._launch_browser(pw)
             context = browser.new_context(
                 user_agent=USER_AGENT,
                 viewport={"width": 1280, "height": 900},
