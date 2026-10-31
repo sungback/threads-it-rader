@@ -14,17 +14,16 @@ if getattr(sys, "frozen", False):
     if _base not in sys.path:
         sys.path.insert(0, _base)
 
-# Playwright 브라우저 경로 보정: 앱 번들 내부(읽기 전용) 대신
-# 사용자별 캐시 디렉터리의 브라우저를 사용하도록 기본값을 세팅한다.
-if not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
-    if sys.platform == "darwin":
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.expanduser(
-            "~/Library/Caches/ms-playwright"
-        )
-    elif sys.platform == "win32":
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.expandvars(
-            r"%LOCALAPPDATA%\ms-playwright"
-        )
+# Playwright 브라우저 캐시 경로 보정:
+# 앱 번들 내부가 아닌 사용자별 캐시 디렉터리를 사용하도록 명시한다.
+if sys.platform == "darwin":
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.expanduser(
+        "~/Library/Caches/ms-playwright"
+    )
+elif sys.platform == "win32":
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.expandvars(
+        r"%LOCALAPPDATA%\ms-playwright"
+    )
 
 
 def main() -> int:

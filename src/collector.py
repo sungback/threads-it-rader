@@ -164,28 +164,69 @@ class ThreadsCollector:
             except Exception:
                 pass
 
+    @staticmethod
+    def _get_browser_cache_path() -> str:
+        """OS별 Playwright 브라우저 캐시 디렉터리 경로 반환."""
+        if sys.platform == "darwin":
+            return os.path.expanduser("~/Library/Caches/ms-playwright")
+        elif sys.platform == "win32":
+            return os.path.expandvars(r"%LOCALAPPDATA%\ms-playwright")
+        return os.path.expanduser("~/.cache/ms-playwright")
+
+    def _auto_install_browsers(self) -> None:
+        """Playwright 드라이버를 통해 크로미움을 사용자 캐시 폴더에 자동 설치한다."""
+        from playwright._impl._driver import compute_driver_executable, get_driver_env
+
+        cache_dir = self._get_browser_cache_path()
+        os.makedirs(cache_dir, exist_ok=True)
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = cache_dir
+
+        driver_exec, driver_env = compute_driver_executable()
+        driver_env["PLAYWRIGHT_BROWSERS_PATH"] = cache_dir
+
+        self._status("크로미움 브라우저 다운로드 중... (최초 1회만 진행, 약 30초 소요)")
+        res = subprocess.run(
+            [driver_exec, "install", "chromium"],
+            env=driver_env,
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode != 0:
+            res2 = subprocess.run(
+                [sys.executable, "-m", "playwright", "install", "chromium"],
+                env=driver_env,
+                capture_output=True,
+                text=True,
+            )
+            if res2.returncode != 0:
+                raise RuntimeError(
+                    f"크로미움 자동 다운로드 실패 (code={res.returncode}):\n{res.stderr or res.stdout}"
+                )
+
     def _launch_browser(self, pw: Any) -> Any:
         """가능한 브라우저를 순서대로 시도해 실행한다.
 
-        ① 시스템 Chrome (다운로드 불필요) ② 시스템 Edge ③ 내장 크로미움.
-        내장 크로미움도 바이너리가 없으면 자동 설치 후 재시도한다.
+        ① 시스템 Chrome (다운로드 불필요) ② 시스템 Edge ③ 사용자 캐시 내 크로미움.
+        내장 크로미움도 없으면 백그라운드 자동 설치 후 재시도한다.
         """
         args = ["--disable-blink-features=AutomationControlled"]
+        cache_dir = self._get_browser_cache_path()
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = cache_dir
         errors: list[str] = []
 
         for channel in ("chrome", "msedge"):
             try:
-                self._status(f"시스템 브라우저 실행 시도: {channel}")
+                self._status(f"시스템 브라우저({channel}) 감지 시도...")
                 return pw.chromium.launch(headless=self.headless, channel=channel, args=args)
             except Exception as e:
                 errors.append(f"channel={channel}: {e}")
 
         try:
-            self._status("내장 크로미움 실행 시도")
+            self._status("크로미움 브라우저 실행 중...")
             return pw.chromium.launch(headless=self.headless, args=args)
         except Exception as e:
             if self._is_missing_browser_error(e):
-                self._status("내장 크로미움이 없어 자동 설치를 시도합니다")
+                self._status("초기 엔진이 없어 크로미움 자동 다운로드를 시작합니다...")
                 self._auto_install_browsers()
                 try:
                     return pw.chromium.launch(headless=self.headless, args=args)
@@ -196,28 +237,9 @@ class ThreadsCollector:
 
         raise RuntimeError(
             "실행 가능한 브라우저를 찾지 못했습니다.\n"
-            "Google Chrome을 설치하거나 터미널에서 다음을 실행하세요:\n"
-            "  playwright install chromium\n\n시도 로그:\n" + "\n".join(errors)
+            "Google Chrome을 설치하거나 네트워크 연결을 확인하세요.\n\n시도 로그:\n"
+            + "\n".join(errors)
         )
-
-    @staticmethod
-    def _is_missing_browser_error(e: Exception) -> bool:
-        """브라우저 바이너리 부재 오류인지 판별한다."""
-        text = str(e)
-        return (
-            "Executable doesn't exist" in text
-            or "looks like Playwright was just installed" in text
-            or ".local-browsers" in text
-            or "ms-playwright" in text
-        )
-
-    @staticmethod
-    def _auto_install_browsers() -> None:
-        """Playwright 드라이버를 통해 크로미움을 자동 설치한다."""
-        from playwright._impl._driver import compute_driver_executable, get_driver_env
-
-        driver_exec, driver_env = compute_driver_executable()
-        subprocess.run([driver_exec, "install", "chromium"], env=driver_env, check=True)
 
     def collect(self) -> list[CollectedPost]:
         """전체 검색어에 대해 수집하고, IT 관련 글만 정규화해 반환한다."""
