@@ -27,19 +27,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install dependencies
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: "0"
-        run: |
-          python -m pip install --upgrade pip
-          pip install PyQt6 playwright pyinstaller
-          python -m playwright install chromium
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
         run: |
           python -m pip install --upgrade pip
           pip install PyQt6 playwright pyinstaller
@@ -69,14 +65,16 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: "Threads IT 레이더 v0.1.0"
+          name: "Threads IT 레이더 ${{ github.ref_name }}"
           body: |
-            ## Threads IT 레이더 v0.1.0 🚀
+            ## Threads IT 레이더 ${{ github.ref_name }} 🚀
             스레드(Threads)에서 IT/개발 콘텐츠만 선별 수집하는 데스크톱 레이더 앱 (PyQt6)
 
             ### 다운로드
             - **Windows**: `ThreadsITRadar-Windows.zip` — 압축 해제 후 `ThreadsITRadar/ThreadsITRadar.exe` 실행
             - **macOS**: `ThreadsITRadar-macOS.zip` — 압축 해제 후 `ThreadsITRadar.app` 실행
+
+            ※ 크로미움 브라우저가 앱 패키지 내부에 완전히 포함되어 있어, 별도 브라우저 설치 없이 바로 실행됩니다.
           draft: false
           prerelease: false
           files: |
