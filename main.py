@@ -26,6 +26,20 @@ elif sys.platform == "win32":
     )
 
 
+def _excepthook(exc_type, exc_value, exc_traceback):
+    import traceback
+    err = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    sys.stderr.write(err + "\n")
+    try:
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(None, "오류 발생", f"프로그램 실행 중 예외가 발생했습니다:\n{err[:600]}")
+    except Exception:
+        pass
+
+
+sys.excepthook = _excepthook
+
+
 def main() -> int:
     from PyQt6.QtWidgets import QApplication, QMessageBox
 

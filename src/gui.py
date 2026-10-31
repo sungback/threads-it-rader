@@ -144,12 +144,12 @@ class PostCard(QFrame):
         foot.addWidget(collected)
         layout.addLayout(foot)
 
-    def _open_link(self) -> None:
+    def _open_link(self, *args: Any) -> None:
         url = self.post.get("url") or ""
         if url.startswith("http"):
             webbrowser.open(url)
 
-    def _toggle_bookmark(self) -> None:
+    def _toggle_bookmark(self, *args: Any) -> None:
         state = self.db.toggle_bookmark(self.post["post_id"])
         self.post["bookmarked"] = 1 if state else 0
         if self.on_changed:
@@ -307,7 +307,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # 수집 워커
     # ------------------------------------------------------------------
-    def _on_search_submitted(self) -> None:
+    def _on_search_submitted(self, *args: Any) -> None:
         q = self.search_box.text().strip()
         queries = [q] if q else None
         self.start_collection(queries=queries)
