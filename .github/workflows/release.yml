@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            asset_name: ThreadsITRadar-Windows
+          - os: macos-latest
+            platform: macos
+            asset_name: ThreadsITRadar-macOS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyQt6 playwright pyinstaller
+          python -m playwright install chromium
+
+      - name: Build with PyInstaller (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --windowed --name ThreadsITRadar main.py
+          Compress-Archive -Path dist/ThreadsITRadar -DestinationPath dist/ThreadsITRadar-Windows.zip
+
+      - name: Build with PyInstaller (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name ThreadsITRadar main.py
+          cd dist && zip -yr ThreadsITRadar-macOS.zip ThreadsITRadar.app && cd ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/ThreadsITRadar*
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Threads IT 레이더 v0.1.0"
+          body: |
+            ## Threads IT 레이더 v0.1.0 🚀
+            스레드(Threads)에서 IT/개발 콘텐츠만 선별 수집하는 데스크톱 레이더 앱 (PyQt6)
+
+            ### 다운로드
+            - **Windows**: `ThreadsITRadar-Windows.zip` — 압축 해제 후 `ThreadsITRadar/ThreadsITRadar.exe` 실행
+            - **macOS**: `ThreadsITRadar-macOS.zip` — 압축 해제 후 `ThreadsITRadar.app` 실행
+          draft: false
+          prerelease: false
+          files: |
+            dist/ThreadsITRadar*
